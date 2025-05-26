@@ -9,20 +9,20 @@ import multiprocessing as mp
 
 from make_video import make_video_from_folder
 
-data_dir       = "/home/yo/no_perturbation"
+data_dir       = "/home/yo/magnetic_reconnection_data/psi001000_eta1E-4"
 quantity_name  = "vel"
-output_folder  = f"frames_{quantity_name}_p1"
+output_folder  = f"frames_{quantity_name}_psi001000_eta1E-4"
 video_folder   = "videos"
-video_filename = f"evolucion_{quantity_name}_p1.mp4"
+video_filename = f"evolucion_{quantity_name}_psi001000_eta1E-4.mp4"
 os.makedirs(output_folder, exist_ok=True)
 
 x_min_dom, x_max_dom = -1.0, 1.0
 y_min_dom, y_max_dom = -0.25, 0.25
 
 NXb, NYb = 64, 64
-block_dx = (x_max_dom - x_min_dom) / 16
+block_dx = (x_max_dom - x_min_dom) / 32
 block_dy = (y_max_dom - y_min_dom) / 8
-NXtot = NXb * 16
+NXtot = NXb * 32
 NYtot = NYb * 8
 
 vtk_files = natsorted([f for f in os.listdir(data_dir) 
@@ -68,14 +68,17 @@ def plot_velocity_frame(step):
 
     plt.figure(figsize=(10, 4))
     plt.imshow(vmag_full, extent=[x_min_dom, x_max_dom, y_min_dom, y_max_dom],
-               origin="lower", cmap="viridis", vmin=0.0, vmax=1.0, aspect="auto")
+               origin="lower", cmap="viridis", vmin=0.0, vmax=0.1, aspect="auto")
     plt.colorbar(label=r"$|\vec{v}|$")
     plt.streamplot(X, Y, vx_full, vy_full, color="white", density=1.0, linewidth=0.5)
     plt.xlabel("x")
     plt.ylabel("y")
     plt.tight_layout()
     plt.savefig(os.path.join(output_folder, f"{quantity_name}_{step}.png"))
-    plt.close()
+    plt.close() 
+
+
+
 
 if __name__ == "__main__":
     with mp.Pool(6) as pool:

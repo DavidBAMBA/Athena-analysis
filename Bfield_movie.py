@@ -10,11 +10,11 @@ import re
 import multiprocessing as mp
 from make_video import make_video_from_folder 
 
-data_dir       = "/home/yo/no_perturbation"
+data_dir       = "/home/yo/magnetic_reconnection_data/psi_driving"
 quantity_name  = "Bcc"
-output_folder  = f"frames_{quantity_name}_p1"
+output_folder  = f"frames_{quantity_name}_psi_driving"
 video_folder   = "videos"
-video_filename = f"evolucion_{quantity_name}_p1.mp4"
+video_filename = f"evolucion_{quantity_name}_psi_driving.mp4"
 os.makedirs(output_folder, exist_ok=True)
 os.makedirs(video_folder, exist_ok=True)
 
@@ -80,7 +80,7 @@ def plot_B_frame(step):
     plt.close()
 
 if __name__ == "__main__":
-    with mp.Pool(6) as pool:
+    with mp.Pool(2) as pool:
         pool.map(plot_B_frame, time_steps)
 
     make_video_from_folder(output_folder, video_folder, video_filename,fps=5)

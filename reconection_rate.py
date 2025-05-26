@@ -1,92 +1,105 @@
-# reconnection_rate_custom.py
+#!/usr/bin/env python
 import os
 import numpy as np
 import pyvista as pv
-from scipy.integrate import simpson
 import matplotlib.pyplot as plt
 from natsort import natsorted
 import re
-from scipy.signal import savgol_filter  # Añade esto al principio con los otros imports
+import multiprocessing as mp
 
-# === CONFIGURACIÓN ===
-data_dir = "/home/yo/perturbation2"
-quantity = "Bcc"
-dx = 2.0 / 512   # de x = [-1, 1]
-dy = 0.5 / 256   # de y = [-0.25, 0.25]
+# Parámetros físicos
+B0 = 1.0         # Campo magnético externo
+rho0 = 1.0       # Densidad central
+eta = 1e-4       # Resistividad
+VA = B0 / np.sqrt(rho0)
 
+# ───────────────────────────── Configuración ─────────────────────────────
+data_dir       = "/home/yo/magnetic_reconnection_data/psi001000_eta1E-3"
+quantity_name  = "Bcc"
+output_folder  = f"frames_Jz_psi001000_eta1E-3"
+os.makedirs(output_folder, exist_ok=True)
+
+x_min_dom, x_max_dom = -1.0, 1.0
+y_min_dom, y_max_dom = -0.25, 0.25
 NXb, NYb = 64, 64
-NXtot, NYtot = 512, 256
+block_dx = (x_max_dom - x_min_dom) / 32
+block_dy = (y_max_dom - y_min_dom) / 8
+NXtot = NXb * 32
+NYtot = NYb * 8
 
-vtk_files = natsorted([f for f in os.listdir(data_dir) if f.endswith(".vtk")])
-time_steps = sorted({re.search(r"\.(\d{5})\.vtk$", f).group(1) for f in vtk_files})
+dx = (x_max_dom - x_min_dom) / NXtot
+dy = (y_max_dom - y_min_dom) / NYtot
 
-def filename_to_time(step_str, dt=0.01):
-    return int(step_str) * dt
+vtk_files = natsorted([f for f in os.listdir(data_dir)
+                       if f.startswith("harris_laminar.block") and "prim" in f and f.endswith(".vtk")])
+time_steps = sorted({match.group(1) for f in vtk_files if (match := re.search(r"\.(\d{5})\.vtk$", f))})
 
-def compute_B_energy_for_step(step):
-    files = [f for f in vtk_files if f".{step}.vtk" in f]
-    Bsq_full = np.zeros((NYtot, NXtot))
+reconnection_rates = []
 
-    for fname in files:
+# ───────────────────────────── Análisis por paso ─────────────────────────────
+def process_frame(step):
+    print(f"[PID {os.getpid()}] Procesando paso {step} …")
+    step_files = [f for f in vtk_files if f".{step}.vtk" in f]
+    if not step_files:
+        print(f"[Aviso] No hay bloques para t={step}")
+        return None  # si falla, no guardar nada
+
+    Bx_full = np.zeros((NYtot, NXtot))
+    By_full = np.zeros((NYtot, NXtot))
+
+    for fname in step_files:
         mesh = pv.read(os.path.join(data_dir, fname))
-        Bvec = mesh[quantity]  # (4096, 3)
-        Bsq = np.sum(Bvec**2, axis=1)
-        Bsq = Bsq.reshape((NYb, NXb))
+        Bvec = mesh[quantity_name]
+        Bx = Bvec[:, 0].reshape((NYb, NXb))
+        By = Bvec[:, 1].reshape((NYb, NXb))
 
         b = mesh.bounds
-        ix = int(round((b[0] + 1.0) / (2.0 / 8)))  # 8 bloques
-        iy = int(round((b[2] + 0.25) / (0.5 / 4))) # 4 bloques
-
+        ix = int(round((b[0] - x_min_dom) / block_dx))
+        iy = int(round((b[2] - y_min_dom) / block_dy))
         x0, x1 = ix * NXb, (ix + 1) * NXb
         y0, y1 = iy * NYb, (iy + 1) * NYb
-        Bsq_full[y0:y1, x0:x1] = Bsq
 
-    # Integración doble sobre el dominio
-    Ey = simpson(Bsq_full, dx=dy, axis=0)
-    Exy = simpson(Ey, dx=dx)
-    return Exy
+        Bx_full[y0:y1, x0:x1] = Bx
+        By_full[y0:y1, x0:x1] = By
 
-# === Loop para cada paso de tiempo ===
-energies = []
-times = []
+    # Calcular Jz
+    dBy_dy, dBy_dx = np.gradient(By_full, dy, dx)
+    dBx_dy, dBx_dx = np.gradient(Bx_full, dy, dx)
+    Jz = dBy_dx - dBx_dy
 
-for step in time_steps:
-    t = filename_to_time(step)
-    try:
-        E_B = compute_B_energy_for_step(step)
-        energies.append(E_B)
-        times.append(t)
-        print(f"t = {t:.2f} → E_B = {E_B:.6f}")
-    except Exception as e:
-        print(f"[Error] en t={t}: {e}")
+    # Guardar figura
+    x = np.linspace(x_min_dom, x_max_dom, NXtot)
+    y = np.linspace(y_min_dom, y_max_dom, NYtot)
+    plt.figure(figsize=(10, 4))
+    plt.imshow(Jz, extent=[x_min_dom, x_max_dom, y_min_dom, y_max_dom],
+               origin="lower", cmap="RdBu_r", vmin=-1.0, vmax=1.0, aspect='auto')
+    plt.colorbar(label=r"$J_z$")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.title(f"Corriente $J_z$, t = {step}")
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_folder, f"Jz_{step}.png"))
+    plt.close()
 
-energies = np.array(energies)
-times = np.array(times)
+    # Calcular reconexión en el centro
+    cx, cy = NXtot // 2, NYtot // 2
+    Jz_center = np.abs(Jz[cy, cx])
+    Ez = eta * Jz_center
+    R = Ez / (B0 * VA)
 
-# === Derivada temporal: dE/dt
-def central_diff(y, x):
-    dydt = np.zeros_like(y)
-    dx = np.diff(x)
-    dydt[1:-1] = (y[2:] - y[:-2]) / (x[2:] - x[:-2])
-    dydt[0] = (y[1] - y[0]) / dx[0]
-    dydt[-1] = (y[-1] - y[-2]) / dx[-1]
-    return dydt
+    return step, R
 
-reconnection_rate = - central_diff(energies, times)
+# ───────────────────────────── Paralelización ─────────────────────────────
+if __name__ == "__main__":
+    with mp.Pool(2) as pool:
+        results = pool.map(process_frame, time_steps)
 
-# === Suavizado con Savitzky-Golay ===
-window_size = 21  # debe ser impar y menor que len(times)
-poly_order = 5    # grado del polinomio para el suavizado
-reconnection_rate_smooth = savgol_filter(reconnection_rate, window_size, poly_order)
+    # Filtrar resultados válidos
+    reconnection_rates = [(int(step), R) for step, R in results if step is not None]
 
-# === Plot reconnection rate suavizada
-plt.figure(figsize=(8, 4))
-plt.plot(times, reconnection_rate_smooth, label=r"$-dE_B/dt$", color='crimson')
-plt.xlabel("Time")
-#plt.yscale('log')
-plt.ylabel("Reconnection Rate")
-plt.title("Magnetic Reconnection Rate")
-plt.tight_layout()
-plt.legend()
-plt.savefig("reconnection_rate_phi=0.01$.png", dpi=120)
-plt.show()
+    # Guardar resultados en archivo
+    reconnection_rates.sort()  # ordenar por paso de tiempo
+    np.savetxt("reconnection_rate-2.txt", reconnection_rates, header="step R")
+
+    print("\n✅ ¡Listo! Tasa de reconexión guardada en: reconnection_rate-2.txt")
+    print("✅ Las figuras están en:", output_folder)

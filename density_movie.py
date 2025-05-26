@@ -9,11 +9,11 @@ from natsort import natsorted
 import multiprocessing as mp
 from make_video import make_video_from_folder
 
-data_dir       = "/home/yo/no_perturbation"
+data_dir       = "/home/yo/magnetic_reconnection_data/psi_driving"
 quantity_name  = "rho"
-output_folder  = f"frames_{quantity_name}_p1"
+output_folder  = f"frames_{quantity_name}_psi_driving"
 video_folder   = "videos"
-video_filename = f"evolucion_{quantity_name}_p1.mp4"
+video_filename = f"evolucion_{quantity_name}_psi_driving.mp4"
 os.makedirs(output_folder, exist_ok=True)
 
 x_min_dom, x_max_dom = -1.0, 1.0
@@ -68,7 +68,7 @@ def plot_rho_frame(step):
     plt.close()
 
 if __name__ == "__main__":
-    with mp.Pool(6) as pool:
+    with mp.Pool(2) as pool:
         pool.map(plot_rho_frame, time_steps)
 
     print(f"\n ¡Listo! Las figuras están en: {output_folder}")

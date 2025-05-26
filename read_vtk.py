@@ -3,7 +3,7 @@ import pyvista as pv
 import re
 
 # Configura aquí tu ruta
-data_dir = "/home/yo/no_perturbation"
+data_dir = "/home/yo/magnetic_reconnection_data/psi001000_eta1E-4"
 
 # Obtener archivos VTK ordenados
 vtk_files = sorted([f for f in os.listdir(data_dir) if f.endswith(".vtk")])
